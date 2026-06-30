@@ -116,9 +116,19 @@
     flex:1; position:relative; display:flex; align-items:center; justify-content:center;
     background:#05070a; overflow:hidden;
   }
-  .capture-stage img, .capture-stage canvas{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+  .capture-stage img, .capture-stage canvas, .capture-stage video{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
   }
+  #liveOverlay{ object-fit:contain; pointer-events:none; }
+  .live-count{
+    position:absolute; left:14px; bottom:14px; z-index:5;
+    background:rgba(14,19,24,.82); backdrop-filter:blur(6px);
+    border:1px solid rgba(255,176,32,.35); border-radius:14px;
+    padding:8px 14px; display:flex; align-items:baseline; gap:8px;
+  }
+  .live-count .num{font-size:26px; font-weight:700; color:var(--amber); line-height:1;}
+  .live-count .lbl{font-size:11px; color:var(--text-mid); font-weight:600;}
+  .ctrl-spacer{width:48px;height:48px;}
   .capture-empty{
     display:flex; flex-direction:column; align-items:center; gap:14px;
     color:var(--text-lo); text-align:center; padding:0 40px;
@@ -173,6 +183,7 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     z-index:30; gap:18px;
   }
+  .hidden{display:none !important;}
   .analyzing.hidden{display:none;}
   .scan-ring{
     width:84px;height:84px;border-radius:50%;
@@ -366,27 +377,27 @@
     </div>
     <div class="capture">
       <div class="capture-stage" id="captureStage">
-        <div class="capture-empty" id="captureEmpty">
+        <video id="liveVideo" autoplay playsinline muted></video>
+        <canvas id="liveOverlay"></canvas>
+        <div class="capture-empty hidden" id="captureEmpty">
           <div class="ring"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#445162" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/></svg></div>
-          <p>Capture the exposed ends of the pipe stack. Fill the frame, keep the camera level.</p>
+          <p id="captureEmptyText">Starting camera…</p>
         </div>
-        <img id="previewImg" style="display:none;">
         <div class="guidance-bar" id="guidanceBar"></div>
+        <div class="live-count" id="liveCount">
+          <span class="num" id="liveCountNum">0</span>
+          <span class="lbl">pipes detected</span>
+        </div>
       </div>
       <div class="capture-controls">
-        <div class="ctrl-btn" onclick="document.getElementById('fileInput').click()" title="Upload from gallery">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        <div class="ctrl-spacer"></div>
+        <div class="shutter" id="lockShutter" onclick="lockAndSave()" title="Lock count">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1a1206" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>
         </div>
-        <div class="shutter" onclick="document.getElementById('cameraInput').click()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#1a1206" stroke-width="2"><circle cx="12" cy="12" r="3.4"/></svg>
-        </div>
-        <div class="ctrl-btn" id="analyzeNowBtn" style="visibility:hidden" title="Analyze">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </div>
+        <div class="ctrl-spacer"></div>
       </div>
     </div>
-    <input type="file" id="cameraInput" accept="image/*" capture="environment">
-    <input type="file" id="fileInput" accept="image/*">
+    <canvas id="workCanvas" style="display:none"></canvas>
 
     <div class="analyzing hidden" id="analyzingOverlay">
       <div class="scan-ring"></div>
@@ -537,10 +548,11 @@
   <div class="toast" id="toast"></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js" onload="onCvReady()"></script>
+<script src="https://docs.opencv.org/4.7.0/opencv.js" onload="onCvScriptLoaded()" onerror="onCvLoadError()"></script>
 <script>
 /* ===================== STATE ===================== */
 let cvReady = false;
+let cvLoadFailed = false;
 let history = []; // {id, count, date, thumb}
 let settings = { sensitivity:'medium', ignoreNested:true, minSize:'medium', guidance:true, train:true };
 
@@ -556,64 +568,94 @@ let lastConfidence = 0;
 
 const $ = (id)=>document.getElementById(id);
 
-function onCvReady(){ cvReady = true; }
+function onCvScriptLoaded(){
+  // The script tag firing 'onload' only means the JS file downloaded —
+  // the actual WASM runtime inits asynchronously after that. Wait for it.
+  if(typeof cv !== 'undefined' && cv.then){
+    // some builds expose cv as a thenable until ready
+    cv.then(()=>{ cvReady = true; });
+  } else if(typeof cv !== 'undefined'){
+    cv['onRuntimeInitialized'] = ()=>{ cvReady = true; };
+  } else {
+    onCvLoadError();
+  }
+}
+function onCvLoadError(){
+  cvLoadFailed = true;
+  const el = document.getElementById('analyzeStageText');
+  if(el) el.textContent = 'AI engine failed to load — check your connection and retry';
+}
 
 /* ===================== NAVIGATION ===================== */
 function goScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $('screen-'+name).classList.add('active');
   if(name==='history') renderHistory();
+  if(name!=='capture') stopLiveCamera();
 }
 function goCapture(){
   resetCaptureUI();
   goScreen('capture');
+  startLiveCamera();
 }
 
-/* ===================== CAPTURE ===================== */
+/* ===================== LIVE CAMERA ===================== */
+let mediaStream = null;
+let liveTimer = null;
+let liveBusy = false;
+const LIVE_INTERVAL_MS = 450;
+
 function resetCaptureUI(){
-  $('previewImg').style.display='none';
-  $('captureEmpty').style.display='flex';
   $('guidanceBar').innerHTML='';
-  $('cameraInput').value='';
-  $('fileInput').value='';
+  $('liveCountNum').textContent = '0';
+  detections = [];
 }
 
-['cameraInput','fileInput'].forEach(id=>{
-  $(id).addEventListener('change', (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = ()=>{
-      currentImage = img;
-      showPreview(img);
-      runGuidanceChecks(img, file);
-      analyzeImage(img);
-    };
-    img.src = url;
-  });
-});
-
-function showPreview(img){
-  $('captureEmpty').style.display='none';
-  const pv = $('previewImg');
-  pv.src = img.src;
-  pv.style.display='block';
+async function startLiveCamera(){
+  $('captureEmpty').classList.remove('hidden');
+  $('captureEmptyText').textContent = 'Starting camera…';
+  try{
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:1280} },
+      audio: false
+    });
+    const video = $('liveVideo');
+    video.srcObject = mediaStream;
+    await video.play();
+    $('captureEmpty').classList.add('hidden');
+    sizeOverlayToVideo();
+    runGuidanceChecksLive();
+    liveTimer = setInterval(liveTick, LIVE_INTERVAL_MS);
+  } catch(err){
+    console.error(err);
+    $('captureEmptyText').textContent = 'Camera unavailable — check permissions and try again';
+  }
 }
 
-function runGuidanceChecks(img, file){
+function stopLiveCamera(){
+  if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
+  if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
+}
+
+function sizeOverlayToVideo(){
+  const video = $('liveVideo');
+  const overlay = $('liveOverlay');
+  const stage = $('captureStage');
+  overlay.width = stage.clientWidth;
+  overlay.height = stage.clientHeight;
+}
+
+function runGuidanceChecksLive(){
   const bar = $('guidanceBar');
   bar.innerHTML='';
   if(!settings.guidance) return;
+  const video = $('liveVideo');
   const pills = [];
-  const mp = (img.width*img.height)/1e6;
-  if(mp < 0.8){
-    pills.push({warn:true, text:'Low resolution — move closer or use a higher-res camera'});
+  const mp = (video.videoWidth*video.videoHeight)/1e6;
+  if(mp < 0.5){
+    pills.push({warn:true, text:'Low resolution — move closer for a clearer count'});
   } else {
     pills.push({warn:false, text:'Resolution OK'});
-  }
-  if(img.width < img.height*0.6 || img.height < img.width*0.6){
-    pills.push({warn:true, text:'Frame may be cropped — check full stack is visible'});
   }
   pills.forEach(p=>{
     const el = document.createElement('div');
@@ -623,104 +665,179 @@ function runGuidanceChecks(img, file){
   });
 }
 
-/* ===================== ANALYSIS (OpenCV Hough Circle pipeline) ===================== */
-function analyzeImage(img){
-  $('analyzingOverlay').classList.remove('hidden');
-  $('analyzeStageText').textContent = 'Preparing image…';
-  setTimeout(()=>{ runDetection(img); }, 120);
+function liveTick(){
+  if(liveBusy) return;
+  if(!cvReady || typeof cv === 'undefined'){
+    if(cvLoadFailed) $('captureEmptyText').textContent = 'AI engine failed to load — check connection';
+    return;
+  }
+  const video = $('liveVideo');
+  if(!video.videoWidth) return;
+  liveBusy = true;
+  try{
+    const result = detectCirclesFromSource(video, video.videoWidth, video.videoHeight);
+    detections = result.detections;
+    const visibleCount = detections.filter(d=> !(settings.ignoreNested && d.nested)).length;
+    $('liveCountNum').textContent = visibleCount;
+    drawLiveOverlay(result);
+  } catch(err){
+    console.error(err);
+  } finally {
+    liveBusy = false;
+  }
 }
 
-function runDetection(img){
+function drawLiveOverlay(result){
+  const overlay = $('liveOverlay');
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  if(!overlay.width || !overlay.height) return;
+  // detection coords are in result.w/result.h (working canvas) space; map to overlay (object-fit:cover of video)
+  const video = $('liveVideo');
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if(!vw || !vh) return;
+  const coverScale = Math.max(overlay.width/vw, overlay.height/vh);
+  const offX = (overlay.width - vw*coverScale)/2;
+  const offY = (overlay.height - vh*coverScale)/2;
+  const toFull = vw / result.w; // working canvas -> full video scale
+
+  ctx.lineWidth = 2;
+  detections.forEach(d=>{
+    if(settings.ignoreNested && d.nested) return;
+    const x = offX + d.x*toFull*coverScale;
+    const y = offY + d.y*toFull*coverScale;
+    const r = d.r*toFull*coverScale;
+    ctx.strokeStyle = d.nested ? 'rgba(255,176,32,.55)' : '#ffb020';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.stroke();
+  });
+}
+
+window.addEventListener('resize', ()=>{ if(mediaStream) sizeOverlayToVideo(); });
+
+function lockAndSave(){
+  const video = $('liveVideo');
+  if(!video.videoWidth){ return; }
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  const img = new Image();
+  img.onload = ()=>{
+    currentImage = img;
+    stopLiveCamera();
+    $('analyzingOverlay').classList.remove('hidden');
+    $('analyzeStageText').textContent = 'Finalizing count…';
+    setTimeout(()=>{ runDetection(img); }, 80);
+  };
+  img.src = canvas.toDataURL('image/jpeg', 0.92);
+}
+
+/* ===================== ANALYSIS (OpenCV Hough Circle pipeline) ===================== */
+function detectCirclesFromSource(source, srcW, srcH, maxDim){
+  const MAXDIM = maxDim || 700; // smaller working size for live, fast loop; higher for final lock
+  let w = srcW, h = srcH;
+  let scale = 1;
+  if(Math.max(w,h) > MAXDIM){ scale = MAXDIM/Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
+
+  const canvas = $('workCanvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(source, 0, 0, w, h);
+
+  const src = cv.imread(canvas);
+  const gray = new cv.Mat();
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+  cv.medianBlur(gray, gray, 5);
+  cv.GaussianBlur(gray, gray, new cv.Size(5,5), 1.2);
+
+  const sensMap = {
+    low:    { param2: 42, minDist: 0.85 },
+    medium: { param2: 32, minDist: 0.72 },
+    high:   { param2: 24, minDist: 0.6 }
+  };
+  const sizeMap = { small:10, medium:16, large:24 };
+  const sCfg = sensMap[settings.sensitivity] || sensMap.medium;
+  const minR = sizeMap[settings.minSize] || 16;
+  const maxR = Math.round(Math.min(w,h) * 0.16);
+
+  const circles = new cv.Mat();
+  cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1,
+    Math.max(8, minR*sCfg.minDist), 80, sCfg.param2, minR, maxR);
+
+  let raw = [];
+  for(let i=0;i<circles.cols;i++){
+    const x = circles.data32F[i*3];
+    const y = circles.data32F[i*3+1];
+    const r = circles.data32F[i*3+2];
+    raw.push({x,y,r});
+  }
+
+  raw.sort((a,b)=>b.r-a.r);
+  let kept = [];
+  for(const c of raw){
+    let dup = false;
+    for(const k of kept){
+      const d = Math.hypot(c.x-k.x, c.y-k.y);
+      if(d < Math.max(c.r,k.r)*0.5){ dup = true; break; }
+    }
+    if(!dup) kept.push(c);
+  }
+
+  kept.forEach(c=>c.nested=false);
+  for(let i=0;i<kept.length;i++){
+    for(let j=0;j<kept.length;j++){
+      if(i===j) continue;
+      const a = kept[i], b = kept[j];
+      if(b.r < a.r*0.78){
+        const d = Math.hypot(a.x-b.x, a.y-b.y);
+        if(d < a.r*0.55){ b.nested = true; }
+      }
+    }
+  }
+
+  const dets = kept.map((c,idx)=>({ id: idx+1, x:c.x, y:c.y, r:c.r, nested:c.nested }));
+  const confidence = circles.cols>0 ? Math.min(99, Math.round(70 + (sCfg.param2/42)*22)) : 0;
+
+  src.delete(); gray.delete(); circles.delete();
+
+  return { detections: dets, w, h, scale, confidence };
+}
+
+function runDetection(img, attempt){
+  attempt = attempt || 0;
   const t0 = performance.now();
   try{
+    if(cvLoadFailed){
+      $('analyzeStageText').textContent = 'AI engine failed to load — tap to retry';
+      setTimeout(()=>{ $('analyzingOverlay').classList.add('hidden'); }, 1500);
+      return;
+    }
     if(!cvReady || typeof cv === 'undefined'){
+      if(attempt > 40){ // ~20s of polling at 500ms — give up instead of looping forever
+        $('analyzeStageText').textContent = 'AI engine taking too long — check your connection and retry';
+        setTimeout(()=>{ $('analyzingOverlay').classList.add('hidden'); }, 1800);
+        return;
+      }
       $('analyzeStageText').textContent = 'AI engine still loading…';
-      setTimeout(()=>runDetection(img), 500);
+      setTimeout(()=>runDetection(img, attempt+1), 500);
       return;
     }
     $('analyzeStageText').textContent = 'Detecting pipe openings…';
 
-    // Downscale for performance, keep aspect
-    const MAXDIM = 1100;
-    let w = img.width, h = img.height;
-    let scale = 1;
-    if(Math.max(w,h) > MAXDIM){ scale = MAXDIM/Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
+    const result = detectCirclesFromSource(img, img.width, img.height, 1100);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, w, h);
-
-    const src = cv.imread(canvas);
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.medianBlur(gray, gray, 5);
-    cv.GaussianBlur(gray, gray, new cv.Size(5,5), 1.2);
-
-    // Sensitivity-driven Hough params
-    const sensMap = {
-      low:    { param2: 42, minDist: 0.85 },
-      medium: { param2: 32, minDist: 0.72 },
-      high:   { param2: 24, minDist: 0.6 }
-    };
-    const sizeMap = { small:10, medium:16, large:24 };
-    const sCfg = sensMap[settings.sensitivity] || sensMap.medium;
-    const minR = sizeMap[settings.minSize] || 16;
-    const maxR = Math.round(Math.min(w,h) * 0.16);
-
-    const circles = new cv.Mat();
-    cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1,
-      Math.max(8, minR*sCfg.minDist), 80, sCfg.param2, minR, maxR);
-
-    let raw = [];
-    for(let i=0;i<circles.cols;i++){
-      const x = circles.data32F[i*3];
-      const y = circles.data32F[i*3+1];
-      const r = circles.data32F[i*3+2];
-      raw.push({x,y,r});
-    }
-
-    // Remove heavily-overlapping duplicates (NMS-ish on radius/center)
-    raw.sort((a,b)=>b.r-a.r);
-    let kept = [];
-    for(const c of raw){
-      let dup = false;
-      for(const k of kept){
-        const d = Math.hypot(c.x-k.x, c.y-k.y);
-        if(d < Math.max(c.r,k.r)*0.5){ dup = true; break; }
-      }
-      if(!dup) kept.push(c);
-    }
-
-    // Telescoped/nested detection: a smaller circle whose center lies well inside a larger one
-    kept.forEach(c=>c.nested=false);
-    for(let i=0;i<kept.length;i++){
-      for(let j=0;j<kept.length;j++){
-        if(i===j) continue;
-        const a = kept[i], b = kept[j]; // is b nested inside a?
-        if(b.r < a.r*0.78){
-          const d = Math.hypot(a.x-b.x, a.y-b.y);
-          if(d < a.r*0.55){ b.nested = true; }
-        }
-      }
-    }
-
-    detections = kept.map((c,idx)=>({
-      id: idx+1, x:c.x, y:c.y, r:c.r, nested:c.nested
-    }));
+    detections = result.detections;
     nextId = detections.length+1;
     editStack = []; redoStack = [];
-
-    const visibleCount = detections.filter(d=> !(settings.ignoreNested && d.nested)).length;
-    lastConfidence = circles.cols>0 ? Math.min(99, Math.round(70 + (sCfg.param2/42)*22)) : 0;
+    lastConfidence = result.confidence;
     lastTimeMs = Math.round(performance.now() - t0);
-
-    scaleInfo = {scale, w, h};
-
-    src.delete(); gray.delete(); circles.delete();
+    scaleInfo = {scale: result.scale, w: result.w, h: result.h};
 
     $('analyzingOverlay').classList.add('hidden');
-    openResult(img, w, h);
+    openResult(img, result.w, result.h);
   } catch(err){
     console.error(err);
     $('analyzeStageText').textContent = 'Detection failed — try retaking the photo';
@@ -861,10 +978,12 @@ function doRedo(){
 function retakePhoto(){
   goScreen('capture');
   resetCaptureUI();
+  startLiveCamera();
 }
 function discardAndBack(){
   goScreen('capture');
   resetCaptureUI();
+  startLiveCamera();
 }
 
 /* ===================== HISTORY (IndexedDB) ===================== */
