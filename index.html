@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>PipeCount AI</title>
+<style>
+  :root{
+    --steel-900:#0e1318;
+    --steel-800:#161d24;
+    --steel-700:#1f2832;
+    --steel-600:#2c3640;
+    --steel-500:#445162;
+    --line:#2a333d;
+    --amber:#ffb020;
+    --amber-dim:#7a5614;
+    --green:#3ddc84;
+    --red:#ff5c5c;
+    --text-hi:#eef2f5;
+    --text-mid:#a7b2bd;
+    --text-lo:#6b7684;
+    --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--steel-900); color:var(--text-hi);
+    font-family:var(--sans);
+    overflow:hidden;
+    user-select:none;
+  }
+  #app{position:fixed; inset:0; display:flex; flex-direction:column;}
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{
+    height:56px; min-height:56px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 16px;
+    background:var(--steel-800);
+    border-bottom:1px solid var(--line);
+    z-index:20;
+  }
+  .topbar .back{
+    width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+    color:var(--text-mid); cursor:pointer; border-radius:8px;
+  }
+  .topbar .back:active{background:var(--steel-700);}
+  .topbar .title{
+    font-size:14px; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--text-mid); font-weight:600;
+  }
+  .topbar .spacer{width:36px;}
+
+  /* ---------- SCREENS ---------- */
+  .screen{position:absolute; inset:0; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .28s ease; background:var(--steel-900);}
+  .screen.active{transform:translateX(0); position:relative;}
+  .screen.behind{transform:translateX(-30%); opacity:0.4;}
+
+  /* ---------- HOME ---------- */
+  .home{
+    flex:1; display:flex; flex-direction:column; justify-content:space-between;
+    padding:28px 22px 34px;
+  }
+  .home-head{margin-top:6px;}
+  .brand-mark{
+    width:46px;height:46px;border-radius:12px;
+    background:radial-gradient(circle at 35% 35%, var(--amber), #b9780f 70%, #5c3c08 100%);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 0 1px rgba(255,176,32,.25), 0 6px 16px rgba(255,176,32,.18);
+    margin-bottom:18px;
+  }
+  .brand-mark svg{width:24px;height:24px;}
+  .home-head h1{
+    font-size:26px; margin:0 0 6px; letter-spacing:-0.01em; font-weight:700;
+  }
+  .home-head p{
+    margin:0; color:var(--text-mid); font-size:14px; line-height:1.5; max-width:280px;
+  }
+  .home-stats{
+    display:flex; gap:10px; margin-top:22px;
+  }
+  .stat-chip{
+    flex:1; background:var(--steel-800); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px;
+  }
+  .stat-chip .v{font-family:var(--mono); font-size:20px; font-weight:600; color:var(--amber);}
+  .stat-chip .l{font-size:10px; color:var(--text-lo); text-transform:uppercase; letter-spacing:.07em; margin-top:2px;}
+
+  .home-grid{display:flex; flex-direction:column; gap:12px;}
+  .tile{
+    display:flex; align-items:center; gap:14px;
+    background:var(--steel-800); border:1px solid var(--line);
+    border-radius:14px; padding:18px 16px;
+    cursor:pointer; transition:background .15s, transform .1s;
+  }
+  .tile:active{background:var(--steel-700); transform:scale(.985);}
+  .tile.primary{
+    background:linear-gradient(135deg, #2a2014 0%, var(--steel-800) 55%);
+    border:1px solid var(--amber-dim);
+  }
+  .tile .icon{
+    width:44px;height:44px;border-radius:10px;flex:none;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--steel-700);
+  }
+  .tile.primary .icon{background:rgba(255,176,32,.14);}
+  .tile .icon svg{width:22px;height:22px;}
+  .tile .txt h3{margin:0 0 2px; font-size:15px; font-weight:600;}
+  .tile .txt p{margin:0; font-size:12px; color:var(--text-lo);}
+  .tile .chev{margin-left:auto; color:var(--text-lo); flex:none;}
+
+  /* ---------- CAPTURE SCREEN ---------- */
+  .capture{flex:1; display:flex; flex-direction:column; background:#000;}
+  .capture-stage{
+    flex:1; position:relative; display:flex; align-items:center; justify-content:center;
+    background:#05070a; overflow:hidden;
+  }
+  .capture-stage img, .capture-stage canvas{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+  }
+  .capture-empty{
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    color:var(--text-lo); text-align:center; padding:0 40px;
+  }
+  .capture-empty .ring{
+    width:96px;height:96px;border-radius:50%;
+    border:2px dashed var(--steel-600);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .capture-empty p{font-size:13px; line-height:1.5; margin:0;}
+
+  .guidance-bar{
+    position:absolute; top:14px; left:14px; right:14px;
+    display:flex; gap:8px; flex-wrap:wrap; z-index:5; pointer-events:none;
+  }
+  .pill{
+    font-size:11px; font-weight:600; padding:6px 10px; border-radius:20px;
+    background:rgba(14,19,24,.78); backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.08); color:var(--text-mid);
+    display:flex; align-items:center; gap:5px;
+  }
+  .pill.warn{color:var(--amber); border-color:rgba(255,176,32,.35);}
+  .pill .dot{width:6px;height:6px;border-radius:50%; background:var(--green);}
+  .pill.warn .dot{background:var(--amber);}
+
+  .capture-controls{
+    padding:18px 20px 28px; background:var(--steel-900);
+    display:flex; align-items:center; justify-content:space-between;
+    border-top:1px solid var(--line);
+  }
+  .ctrl-btn{
+    width:48px;height:48px;border-radius:12px; background:var(--steel-800);
+    border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+    color:var(--text-mid); cursor:pointer;
+  }
+  .ctrl-btn:active{background:var(--steel-700);}
+  .shutter{
+    width:72px;height:72px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ffd27a, var(--amber) 55%, #8a5a0e 100%);
+    border:4px solid var(--steel-800);
+    box-shadow:0 0 0 2px var(--amber-dim);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .shutter:active{transform:scale(.94);}
+  .shutter svg{width:26px;height:26px;}
+  input[type=file]{display:none;}
+
+  /* ---------- ANALYZING ---------- */
+  .analyzing{
+    position:absolute; inset:0; background:rgba(5,7,10,.92);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:30; gap:18px;
+  }
+  .analyzing.hidden{display:none;}
+  .scan-ring{
+    width:84px;height:84px;border-radius:50%;
+    border:3px solid var(--steel-700);
+    border-top-color:var(--amber);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .analyzing .stage{font-family:var(--mono); font-size:12px; color:var(--text-mid); letter-spacing:.04em;}
+  .analyzing .stage b{color:var(--amber);}
+
+  /* ---------- RESULT SCREEN ---------- */
+  .result{flex:1; display:flex; flex-direction:column; background:var(--steel-900);}
+  .result-stage{
+    flex:1; position:relative; overflow:hidden; background:#05070a;
+    touch-action:none;
+  }
+  #resultCanvas{position:absolute; top:0; left:0; display:block; touch-action:none;}
+  .result-stage-wrap{position:absolute; inset:0; overflow:auto;}
+
+  .result-hud{
+    position:absolute; top:12px; left:12px; right:12px;
+    display:flex; justify-content:space-between; gap:8px; z-index:10; pointer-events:none;
+  }
+  .count-badge{
+    background:rgba(14,19,24,.85); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,176,32,.3); border-radius:14px;
+    padding:10px 16px; pointer-events:auto;
+  }
+  .count-badge .n{font-family:var(--mono); font-size:30px; font-weight:700; color:var(--amber); line-height:1;}
+  .count-badge .l{font-size:10px; color:var(--text-mid); text-transform:uppercase; letter-spacing:.07em; margin-top:2px;}
+  .meta-badge{
+    background:rgba(14,19,24,.85); backdrop-filter:blur(8px);
+    border:1px solid var(--line); border-radius:14px; padding:10px 12px;
+    text-align:right; pointer-events:auto;
+  }
+  .meta-badge .row{font-family:var(--mono); font-size:11px; color:var(--text-mid); white-space:nowrap;}
+  .meta-badge .row b{color:var(--text-hi);}
+
+  .mode-bar{
+    position:absolute; bottom:84px; left:12px; right:12px; z-index:10;
+    display:flex; justify-content:center;
+  }
+  .mode-pill{
+    background:rgba(14,19,24,.9); border:1px solid var(--line); border-radius:30px;
+    display:flex; padding:4px; gap:2px;
+  }
+  .mode-pill button{
+    border:none; background:transparent; color:var(--text-mid);
+    font-size:12px; font-weight:600; padding:8px 14px; border-radius:24px; cursor:pointer;
+    font-family:var(--sans);
+  }
+  .mode-pill button.active{background:var(--amber); color:#1a1206;}
+
+  .result-controls{
+    padding:14px 16px 26px; background:var(--steel-800); border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .icon-btn{
+    width:46px;height:46px;border-radius:12px; background:var(--steel-700);
+    border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+    color:var(--text-mid); cursor:pointer;
+  }
+  .icon-btn:active{background:var(--steel-600);}
+  .icon-btn:disabled{opacity:.35;}
+  .save-btn{
+    flex:1; background:var(--amber); color:#1a1206; border:none; border-radius:12px;
+    font-weight:700; font-size:14px; padding:14px; cursor:pointer; font-family:var(--sans);
+  }
+  .save-btn:active{background:#e29c1c;}
+
+  /* ---------- HISTORY ---------- */
+  .history{flex:1; overflow-y:auto; padding:14px 16px 30px;}
+  .history-empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:60vh; color:var(--text-lo); text-align:center; gap:10px; padding:0 30px;
+  }
+  .hist-card{
+    display:flex; gap:12px; background:var(--steel-800); border:1px solid var(--line);
+    border-radius:12px; padding:12px; margin-bottom:10px; align-items:center;
+  }
+  .hist-thumb{width:54px;height:54px;border-radius:8px; object-fit:cover; background:var(--steel-700); flex:none;}
+  .hist-info{flex:1; min-width:0;}
+  .hist-info .n{font-family:var(--mono); font-weight:700; color:var(--amber); font-size:18px;}
+  .hist-info .d{font-size:11px; color:var(--text-lo); margin-top:2px;}
+  .hist-info .loc{font-size:11px; color:var(--text-mid); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .hist-del{color:var(--text-lo); flex:none; width:30px;height:30px;display:flex;align-items:center;justify-content:center; cursor:pointer;}
+
+  /* ---------- SETTINGS / ABOUT ---------- */
+  .settings, .about{flex:1; overflow-y:auto; padding:16px 16px 30px;}
+  .sec-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-lo); margin:18px 4px 8px;}
+  .sec-label:first-child{margin-top:4px;}
+  .set-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--steel-800); border:1px solid var(--line); border-radius:12px;
+    padding:14px 14px; margin-bottom:8px;
+  }
+  .set-row .l{font-size:14px; font-weight:500;}
+  .set-row .s{font-size:11px; color:var(--text-lo); margin-top:2px;}
+  .switch{
+    width:46px; height:26px; border-radius:14px; background:var(--steel-600);
+    position:relative; cursor:pointer; flex:none; transition:background .15s;
+  }
+  .switch.on{background:var(--amber);}
+  .switch .knob{
+    width:20px;height:20px;border-radius:50%; background:#fff; position:absolute; top:3px; left:3px;
+    transition:left .15s; box-shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  .switch.on .knob{left:23px;}
+  select.set-select{
+    background:var(--steel-700); color:var(--text-hi); border:1px solid var(--line);
+    border-radius:8px; padding:7px 10px; font-size:13px; font-family:var(--sans);
+  }
+  .about-logo{display:flex; flex-direction:column; align-items:center; padding:20px 0 10px;}
+  .about-logo .brand-mark{margin-bottom:14px;}
+  .about-logo h2{margin:0 0 4px; font-size:18px;}
+  .about-logo .ver{font-family:var(--mono); font-size:11px; color:var(--text-lo);}
+  .about p.body-text{font-size:13px; color:var(--text-mid); line-height:1.6; padding:0 4px;}
+  .about-list{list-style:none; padding:0; margin:8px 0 0;}
+  .about-list li{
+    font-size:13px; color:var(--text-mid); padding:8px 0; border-bottom:1px solid var(--line);
+    display:flex; gap:8px;
+  }
+  .about-list li::before{content:'—'; color:var(--amber-dim); flex:none;}
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--steel-700); border:1px solid var(--line); color:var(--text-hi);
+    padding:11px 18px; border-radius:30px; font-size:13px; z-index:100;
+    opacity:0; transition:opacity .25s, transform .25s; pointer-events:none;
+    white-space:nowrap;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  ::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ HOME ============ -->
+  <div class="screen active" id="screen-home">
+    <div class="home">
+      <div>
+        <div class="home-head">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#1a1206" stroke-width="2.2"/><circle cx="12" cy="12" r="3.4" stroke="#1a1206" stroke-width="2.2"/></svg>
+          </div>
+          <h1>PipeCount AI</h1>
+          <p>Point, capture, count. Built for warehouse stock audits — no training required.</p>
+        </div>
+        <div class="home-stats">
+          <div class="stat-chip"><div class="v" id="statTotalAudits">0</div><div class="l">Audits Logged</div></div>
+          <div class="stat-chip"><div class="v" id="statLastCount">—</div><div class="l">Last Count</div></div>
+        </div>
+      </div>
+
+      <div class="home-grid">
+        <div class="tile primary" onclick="goCapture()">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="2"><path d="M4 8h2l1.5-2h9L18 8h2a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2v-9a2 2 0 012-2z"/><circle cx="12" cy="14" r="3.5"/></svg></div>
+          <div class="txt"><h3>Count Pipes</h3><p>Capture a photo and get an instant count</p></div>
+          <div class="chev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+        <div class="tile" onclick="goScreen('history')">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#a7b2bd" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+          <div class="txt"><h3>History</h3><p>Review past audits and counts</p></div>
+          <div class="chev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+        <div class="tile" onclick="goScreen('settings')">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#a7b2bd" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 000-2l2-1.5-2-3.4-2.3.9a8 8 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a8 8 0 00-1.7 1l-2.3-.9-2 3.4 2 1.5a8 8 0 000 2l-2 1.5 2 3.4 2.3-.9a8 8 0 001.7 1l.3 2.4h4l.3-2.4a8 8 0 001.7-1l2.3.9 2-3.4-2-1.5z"/></svg></div>
+          <div class="txt"><h3>Settings</h3><p>Detection sensitivity & preferences</p></div>
+          <div class="chev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+        <div class="tile" onclick="goScreen('about')">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#a7b2bd" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+          <div class="txt"><h3>About</h3><p>Version, model info & guidance</p></div>
+          <div class="chev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CAPTURE ============ -->
+  <div class="screen" id="screen-capture">
+    <div class="topbar">
+      <div class="back" onclick="goScreen('home')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </div>
+      <div class="title">Count Pipes</div>
+      <div class="spacer"></div>
+    </div>
+    <div class="capture">
+      <div class="capture-stage" id="captureStage">
+        <div class="capture-empty" id="captureEmpty">
+          <div class="ring"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#445162" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/></svg></div>
+          <p>Capture the exposed ends of the pipe stack. Fill the frame, keep the camera level.</p>
+        </div>
+        <img id="previewImg" style="display:none;">
+        <div class="guidance-bar" id="guidanceBar"></div>
+      </div>
+      <div class="capture-controls">
+        <div class="ctrl-btn" onclick="document.getElementById('fileInput').click()" title="Upload from gallery">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        </div>
+        <div class="shutter" onclick="document.getElementById('cameraInput').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1a1206" stroke-width="2"><circle cx="12" cy="12" r="3.4"/></svg>
+        </div>
+        <div class="ctrl-btn" id="analyzeNowBtn" style="visibility:hidden" title="Analyze">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+    <input type="file" id="fileInput" accept="image/*">
+
+    <div class="analyzing hidden" id="analyzingOverlay">
+      <div class="scan-ring"></div>
+      <div class="stage" id="analyzeStageText">Detecting pipe openings…</div>
+    </div>
+  </div>
+
+  <!-- ============ RESULT ============ -->
+  <div class="screen" id="screen-result">
+    <div class="topbar">
+      <div class="back" onclick="discardAndBack()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </div>
+      <div class="title">Result</div>
+      <div class="spacer"></div>
+    </div>
+    <div class="result">
+      <div class="result-stage" id="resultStage">
+        <div class="result-stage-wrap" id="resultWrap">
+          <canvas id="resultCanvas"></canvas>
+        </div>
+        <div class="result-hud">
+          <div class="count-badge">
+            <div class="n" id="finalCount">0</div>
+            <div class="l">Pipe Count</div>
+          </div>
+          <div class="meta-badge">
+            <div class="row">Confidence <b id="confVal">—</b></div>
+            <div class="row">Time <b id="timeVal">—</b></div>
+          </div>
+        </div>
+        <div class="mode-bar">
+          <div class="mode-pill">
+            <button id="modeAdd" class="active" onclick="setEditMode('add')">+ Add</button>
+            <button id="modeDel" onclick="setEditMode('del')">Delete</button>
+          </div>
+        </div>
+      </div>
+      <div class="result-controls">
+        <div class="icon-btn" id="undoBtn" onclick="doUndo()" title="Undo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-2"/></svg>
+        </div>
+        <div class="icon-btn" id="redoBtn" onclick="doRedo()" title="Redo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h2"/></svg>
+        </div>
+        <button class="save-btn" onclick="saveAudit()">Save Audit · <span id="saveCountInline">0</span> pipes</button>
+        <div class="icon-btn" onclick="retakePhoto()" title="Retake">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.5 14a9 9 0 1014.85-9.36L20 7"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ HISTORY ============ -->
+  <div class="screen" id="screen-history">
+    <div class="topbar">
+      <div class="back" onclick="goScreen('home')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </div>
+      <div class="title">History</div>
+      <div class="spacer"></div>
+    </div>
+    <div class="history" id="historyList"></div>
+  </div>
+
+  <!-- ============ SETTINGS ============ -->
+  <div class="screen" id="screen-settings">
+    <div class="topbar">
+      <div class="back" onclick="goScreen('home')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </div>
+      <div class="title">Settings</div>
+      <div class="spacer"></div>
+    </div>
+    <div class="settings">
+      <div class="sec-label">Detection</div>
+      <div class="set-row">
+        <div><div class="l">Sensitivity</div><div class="s">Higher catches smaller / faint openings</div></div>
+        <select class="set-select" id="sensSelect" onchange="saveSettings()">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="set-row">
+        <div><div class="l">Ignore nested openings</div><div class="s">Skip telescoped pipe-inside-pipe detections</div></div>
+        <div class="switch on" id="nestSwitch" onclick="toggleSwitch('nestSwitch')"><div class="knob"></div></div>
+      </div>
+      <div class="set-row">
+        <div><div class="l">Min. opening size</div><div class="s">Filters tiny noise circles (fittings, debris)</div></div>
+        <select class="set-select" id="sizeSelect" onchange="saveSettings()">
+          <option value="small">Small (≥10px)</option>
+          <option value="medium" selected>Medium (≥16px)</option>
+          <option value="large">Large (≥24px)</option>
+        </select>
+      </div>
+
+      <div class="sec-label">Capture</div>
+      <div class="set-row">
+        <div><div class="l">Camera guidance overlay</div><div class="s">Warn on tilt, blur, distance, lighting</div></div>
+        <div class="switch on" id="guideSwitch" onclick="toggleSwitch('guideSwitch')"><div class="knob"></div></div>
+      </div>
+
+      <div class="sec-label">Data</div>
+      <div class="set-row">
+        <div><div class="l">Store corrections for training</div><div class="s">Manual edits help improve future accuracy</div></div>
+        <div class="switch on" id="trainSwitch" onclick="toggleSwitch('trainSwitch')"><div class="knob"></div></div>
+      </div>
+      <div class="set-row" onclick="clearHistory()" style="cursor:pointer;">
+        <div><div class="l" style="color:#ff5c5c;">Clear all history</div><div class="s">Removes saved audits from this device</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ABOUT ============ -->
+  <div class="screen" id="screen-about">
+    <div class="topbar">
+      <div class="back" onclick="goScreen('home')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      </div>
+      <div class="title">About</div>
+      <div class="spacer"></div>
+    </div>
+    <div class="about">
+      <div class="about-logo">
+        <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#1a1206" stroke-width="2.2"/><circle cx="12" cy="12" r="3.4" stroke="#1a1206" stroke-width="2.2"/></svg></div>
+        <h2>PipeCount AI</h2>
+        <div class="ver">v1.0 · build 2026.06 · prototype</div>
+      </div>
+      <p class="body-text">PipeCount AI counts visible pipe openings from a single photo — built for warehouse stock audits on loose, unbundled pipe stacks. It is not intended for factory production counting or loading reconciliation, and bundled CPVC/UPVC stock and container-loaded pipes fall outside its scope.</p>
+      <div class="sec-label">How it works</div>
+      <ul class="about-list">
+        <li>Capture the exposed ends of a pipe stack with the camera or pick a photo</li>
+        <li>On-device detection finds each circular opening and assigns it an ID</li>
+        <li>Telescoped (pipe-inside-pipe) openings are flagged and excluded by default</li>
+        <li>Tap + Add to mark a missed pipe, or Delete to remove a false detection</li>
+        <li>Save the audit — it's logged to History with the date, time and count</li>
+      </ul>
+      <div class="sec-label">Good to know</div>
+      <ul class="about-list">
+        <li>Accuracy depends on lighting, angle and how exposed the pipe ends are</li>
+        <li>Always do a quick visual spot-check before relying on the count</li>
+        <li>This is a prototype build — treat counts as an audit aid, not a final record</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js" onload="onCvReady()"></script>
+<script>
+/* ===================== STATE ===================== */
+let cvReady = false;
+let history = []; // {id, count, date, thumb}
+let settings = { sensitivity:'medium', ignoreNested:true, minSize:'medium', guidance:true, train:true };
+
+let currentImage = null;      // HTMLImageElement
+let detections = [];          // {id, x, y, r, nested:bool}
+let editStack = [];           // undo stack of {type, idx, detection}
+let redoStack = [];
+let editMode = 'add';
+let nextId = 1;
+let scaleInfo = {scale:1, w:0, h:0};
+let lastTimeMs = 0;
+let lastConfidence = 0;
+
+const $ = (id)=>document.getElementById(id);
+
+function onCvReady(){ cvReady = true; }
+
+/* ===================== NAVIGATION ===================== */
+function goScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('screen-'+name).classList.add('active');
+  if(name==='history') renderHistory();
+}
+function goCapture(){
+  resetCaptureUI();
+  goScreen('capture');
+}
+
+/* ===================== CAPTURE ===================== */
+function resetCaptureUI(){
+  $('previewImg').style.display='none';
+  $('captureEmpty').style.display='flex';
+  $('guidanceBar').innerHTML='';
+  $('cameraInput').value='';
+  $('fileInput').value='';
+}
+
+['cameraInput','fileInput'].forEach(id=>{
+  $(id).addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      currentImage = img;
+      showPreview(img);
+      runGuidanceChecks(img, file);
+      analyzeImage(img);
+    };
+    img.src = url;
+  });
+});
+
+function showPreview(img){
+  $('captureEmpty').style.display='none';
+  const pv = $('previewImg');
+  pv.src = img.src;
+  pv.style.display='block';
+}
+
+function runGuidanceChecks(img, file){
+  const bar = $('guidanceBar');
+  bar.innerHTML='';
+  if(!settings.guidance) return;
+  const pills = [];
+  const mp = (img.width*img.height)/1e6;
+  if(mp < 0.8){
+    pills.push({warn:true, text:'Low resolution — move closer or use a higher-res camera'});
+  } else {
+    pills.push({warn:false, text:'Resolution OK'});
+  }
+  if(img.width < img.height*0.6 || img.height < img.width*0.6){
+    pills.push({warn:true, text:'Frame may be cropped — check full stack is visible'});
+  }
+  pills.forEach(p=>{
+    const el = document.createElement('div');
+    el.className = 'pill' + (p.warn?' warn':'');
+    el.innerHTML = `<span class="dot"></span>${p.text}`;
+    bar.appendChild(el);
+  });
+}
+
+/* ===================== ANALYSIS (OpenCV Hough Circle pipeline) ===================== */
+function analyzeImage(img){
+  $('analyzingOverlay').classList.remove('hidden');
+  $('analyzeStageText').textContent = 'Preparing image…';
+  setTimeout(()=>{ runDetection(img); }, 120);
+}
+
+function runDetection(img){
+  const t0 = performance.now();
+  try{
+    if(!cvReady || typeof cv === 'undefined'){
+      $('analyzeStageText').textContent = 'AI engine still loading…';
+      setTimeout(()=>runDetection(img), 500);
+      return;
+    }
+    $('analyzeStageText').textContent = 'Detecting pipe openings…';
+
+    // Downscale for performance, keep aspect
+    const MAXDIM = 1100;
+    let w = img.width, h = img.height;
+    let scale = 1;
+    if(Math.max(w,h) > MAXDIM){ scale = MAXDIM/Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const src = cv.imread(canvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.medianBlur(gray, gray, 5);
+    cv.GaussianBlur(gray, gray, new cv.Size(5,5), 1.2);
+
+    // Sensitivity-driven Hough params
+    const sensMap = {
+      low:    { param2: 42, minDist: 0.85 },
+      medium: { param2: 32, minDist: 0.72 },
+      high:   { param2: 24, minDist: 0.6 }
+    };
+    const sizeMap = { small:10, medium:16, large:24 };
+    const sCfg = sensMap[settings.sensitivity] || sensMap.medium;
+    const minR = sizeMap[settings.minSize] || 16;
+    const maxR = Math.round(Math.min(w,h) * 0.16);
+
+    const circles = new cv.Mat();
+    cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1,
+      Math.max(8, minR*sCfg.minDist), 80, sCfg.param2, minR, maxR);
+
+    let raw = [];
+    for(let i=0;i<circles.cols;i++){
+      const x = circles.data32F[i*3];
+      const y = circles.data32F[i*3+1];
+      const r = circles.data32F[i*3+2];
+      raw.push({x,y,r});
+    }
+
+    // Remove heavily-overlapping duplicates (NMS-ish on radius/center)
+    raw.sort((a,b)=>b.r-a.r);
+    let kept = [];
+    for(const c of raw){
+      let dup = false;
+      for(const k of kept){
+        const d = Math.hypot(c.x-k.x, c.y-k.y);
+        if(d < Math.max(c.r,k.r)*0.5){ dup = true; break; }
+      }
+      if(!dup) kept.push(c);
+    }
+
+    // Telescoped/nested detection: a smaller circle whose center lies well inside a larger one
+    kept.forEach(c=>c.nested=false);
+    for(let i=0;i<kept.length;i++){
+      for(let j=0;j<kept.length;j++){
+        if(i===j) continue;
+        const a = kept[i], b = kept[j]; // is b nested inside a?
+        if(b.r < a.r*0.78){
+          const d = Math.hypot(a.x-b.x, a.y-b.y);
+          if(d < a.r*0.55){ b.nested = true; }
+        }
+      }
+    }
+
+    detections = kept.map((c,idx)=>({
+      id: idx+1, x:c.x, y:c.y, r:c.r, nested:c.nested
+    }));
+    nextId = detections.length+1;
+    editStack = []; redoStack = [];
+
+    const visibleCount = detections.filter(d=> !(settings.ignoreNested && d.nested)).length;
+    lastConfidence = circles.cols>0 ? Math.min(99, Math.round(70 + (sCfg.param2/42)*22)) : 0;
+    lastTimeMs = Math.round(performance.now() - t0);
+
+    scaleInfo = {scale, w, h};
+
+    src.delete(); gray.delete(); circles.delete();
+
+    $('analyzingOverlay').classList.add('hidden');
+    openResult(img, w, h);
+  } catch(err){
+    console.error(err);
+    $('analyzeStageText').textContent = 'Detection failed — try retaking the photo';
+    setTimeout(()=>{ $('analyzingOverlay').classList.add('hidden'); }, 1200);
+  }
+}
+
+/* ===================== RESULT / EDIT CANVAS ===================== */
+function openResult(img, dispW, dispH){
+  goScreen('result');
+  const stage = $('resultStage');
+  const wrap = $('resultWrap');
+  const canvas = $('resultCanvas');
+
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  const fitScale = Math.min(stageW/dispW, stageH/dispH);
+  const cw = Math.round(dispW*fitScale), ch = Math.round(dispH*fitScale);
+  canvas.width = cw; canvas.height = ch;
+  canvas.style.width = cw+'px'; canvas.style.height = ch+'px';
+  canvas.dataset.renderScale = (cw/dispW) * scaleInfo.scale; // canvas px -> original img px factor inverse used below
+
+  canvas._bgImg = img;
+  canvas._fit = fitScale; // display px per detection-space px (detection space = scaled-down working image)
+
+  drawCanvas();
+  updateHud();
+  attachCanvasEvents();
+}
+
+function drawCanvas(){
+  const canvas = $('resultCanvas');
+  const ctx = canvas.getContext('2d');
+  const img = canvas._bgImg;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img, 0,0, canvas.width, canvas.height);
+
+  const fit = canvas._fit;
+  detections.forEach(d=>{
+    const hide = settings.ignoreNested && d.nested;
+    const x = d.x*fit, y = d.y*fit, r = d.r*fit;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = hide ? 'rgba(255,176,32,0.55)' : '#3ddc84';
+    ctx.setLineDash(hide ? [4,3] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if(!hide){
+      ctx.font = '600 10px IBM Plex Mono, monospace';
+      ctx.fillStyle = '#3ddc84';
+      ctx.textAlign='center';
+      ctx.fillText(d.id, x, y - r - 4 < 8 ? y+r+12 : y - r - 4);
+    }
+  });
+}
+
+function updateHud(){
+  const visible = detections.filter(d=> !(settings.ignoreNested && d.nested));
+  $('finalCount').textContent = visible.length;
+  $('saveCountInline').textContent = visible.length;
+  $('confVal').textContent = lastConfidence ? lastConfidence+'%' : '—';
+  $('timeVal').textContent = lastTimeMs ? (lastTimeMs/1000).toFixed(1)+'s' : '—';
+  $('undoBtn').style.opacity = editStack.length? '1':'.35';
+  $('redoBtn').style.opacity = redoStack.length? '1':'.35';
+}
+
+function setEditMode(mode){
+  editMode = mode;
+  $('modeAdd').classList.toggle('active', mode==='add');
+  $('modeDel').classList.toggle('active', mode==='del');
+}
+
+function attachCanvasEvents(){
+  const canvas = $('resultCanvas');
+  canvas.onclick = (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const fit = canvas._fit;
+    const x = px/fit, y = py/fit;
+
+    if(editMode === 'add'){
+      const det = {id:nextId++, x, y, r: avgRadius(), nested:false, manual:true};
+      detections.push(det);
+      editStack.push({type:'add', detection:det});
+      redoStack = [];
+    } else {
+      // find nearest detection within tap radius
+      let best=null, bestD=Infinity;
+      detections.forEach(d=>{
+        const dist = Math.hypot(d.x-x, d.y-y);
+        if(dist < d.r*1.3 && dist < bestD){ bestD=dist; best=d; }
+      });
+      if(best){
+        const idx = detections.indexOf(best);
+        detections.splice(idx,1);
+        editStack.push({type:'del', detection:best, idx});
+        redoStack = [];
+      }
+    }
+    drawCanvas();
+    updateHud();
+  };
+}
+
+function avgRadius(){
+  if(detections.length===0) return 20;
+  const rs = detections.map(d=>d.r);
+  return rs.reduce((a,b)=>a+b,0)/rs.length;
+}
+
+function doUndo(){
+  const action = editStack.pop();
+  if(!action) return;
+  if(action.type==='add'){
+    const idx = detections.indexOf(action.detection);
+    if(idx>-1) detections.splice(idx,1);
+  } else if(action.type==='del'){
+    detections.splice(action.idx, 0, action.detection);
+  }
+  redoStack.push(action);
+  drawCanvas(); updateHud();
+}
+function doRedo(){
+  const action = redoStack.pop();
+  if(!action) return;
+  if(action.type==='add'){
+    detections.push(action.detection);
+  } else if(action.type==='del'){
+    const idx = detections.indexOf(action.detection);
+    if(idx>-1) detections.splice(idx,1);
+  }
+  editStack.push(action);
+  drawCanvas(); updateHud();
+}
+
+function retakePhoto(){
+  goScreen('capture');
+  resetCaptureUI();
+}
+function discardAndBack(){
+  goScreen('capture');
+  resetCaptureUI();
+}
+
+/* ===================== HISTORY (IndexedDB) ===================== */
+let db = null;
+function openDb(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open('pipecount-db', 1);
+    req.onupgradeneeded = (e)=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('audits')){
+        d.createObjectStore('audits', {keyPath:'id'});
+      }
+    };
+    req.onsuccess = (e)=>{ db = e.target.result; resolve(db); };
+    req.onerror = (e)=> reject(e);
+  });
+}
+
+async function loadHistory(){
+  try{
+    await openDb();
+    const tx = db.transaction('audits','readonly');
+    const store = tx.objectStore('audits');
+    const all = [];
+    await new Promise((resolve)=>{
+      const cursorReq = store.openCursor();
+      cursorReq.onsuccess = (e)=>{
+        const cursor = e.target.result;
+        if(cursor){ all.push(cursor.value); cursor.continue(); }
+        else resolve();
+      };
+    });
+    history = all.sort((a,b)=>b.ts-a.ts);
+  } catch(e){ history = []; }
+  refreshHomeStats();
+}
+
+async function saveAudit(){
+  const visible = detections.filter(d=> !(settings.ignoreNested && d.nested));
+  const canvas = $('resultCanvas');
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = 120; thumbCanvas.height = 120*(canvas.height/canvas.width)||120;
+  const tctx = thumbCanvas.getContext('2d');
+  tctx.drawImage(canvas, 0,0, thumbCanvas.width, thumbCanvas.height);
+  const thumb = thumbCanvas.toDataURL('image/jpeg', 0.6);
+
+  const record = {
+    id: 'audit-'+Date.now(),
+    ts: Date.now(),
+    count: visible.length,
+    nestedExcluded: detections.length - visible.length,
+    confidence: lastConfidence,
+    thumb
+  };
+  try{
+    await openDb();
+    const tx = db.transaction('audits','readwrite');
+    tx.objectStore('audits').put(record);
+    await new Promise(r=> tx.oncomplete = r);
+    history.unshift(record);
+  } catch(e){ history.unshift(record); }
+
+  refreshHomeStats();
+  showToast(`Saved · ${visible.length} pipes counted`);
+  goScreen('home');
+}
+
+function refreshHomeStats(){
+  $('statTotalAudits').textContent = history.length;
+  $('statLastCount').textContent = history.length ? history[0].count : '—';
+}
+
+function renderHistory(){
+  const el = $('historyList');
+  if(history.length===0){
+    el.innerHTML = `<div class="history-empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6b7684" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      <p>No audits yet.<br>Counted pipes will appear here.</p>
+    </div>`;
+    return;
+  }
+  el.innerHTML = history.map(h=>{
+    const d = new Date(h.ts);
+    const dateStr = d.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'});
+    const timeStr = d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    return `<div class="hist-card">
+      <img class="hist-thumb" src="${h.thumb}">
+      <div class="hist-info">
+        <div class="n">${h.count} pipes</div>
+        <div class="d">${dateStr} · ${timeStr}</div>
+        <div class="loc">${h.nestedExcluded? h.nestedExcluded+' nested excluded · ':''}${h.confidence}% confidence</div>
+      </div>
+      <div class="hist-del" onclick="deleteAudit('${h.id}')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7684" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteAudit(id){
+  history = history.filter(h=>h.id!==id);
+  try{
+    await openDb();
+    const tx = db.transaction('audits','readwrite');
+    tx.objectStore('audits').delete(id);
+  } catch(e){}
+  renderHistory();
+  refreshHomeStats();
+}
+
+async function clearHistory(){
+  history = [];
+  try{
+    await openDb();
+    const tx = db.transaction('audits','readwrite');
+    tx.objectStore('audits').clear();
+  } catch(e){}
+  refreshHomeStats();
+  showToast('History cleared');
+}
+
+/* ===================== SETTINGS ===================== */
+function toggleSwitch(id){
+  const el = $(id);
+  el.classList.toggle('on');
+  saveSettings();
+}
+function saveSettings(){
+  settings.sensitivity = $('sensSelect').value;
+  settings.ignoreNested = $('nestSwitch').classList.contains('on');
+  settings.minSize = $('sizeSelect').value;
+  settings.guidance = $('guideSwitch').classList.contains('on');
+  settings.train = $('trainSwitch').classList.contains('on');
+}
+function applySettingsToUI(){
+  $('sensSelect').value = settings.sensitivity;
+  $('nestSwitch').classList.toggle('on', settings.ignoreNested);
+  $('sizeSelect').value = settings.minSize;
+  $('guideSwitch').classList.toggle('on', settings.guidance);
+  $('trainSwitch').classList.toggle('on', settings.train);
+}
+
+/* ===================== TOAST ===================== */
+function showToast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+/* ===================== INIT ===================== */
+applySettingsToUI();
+loadHistory();
+</script>
+</body>
+</html>
